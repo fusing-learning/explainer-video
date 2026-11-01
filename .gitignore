@@ -1,0 +1,17 @@
+.env
+.venv/
+.cache/
+node_modules/
+videos/
+output/
+renderer/node_modules/
+
+# local tooling and OS junk
+.DS_Store
+.archify/
+.claude/settings.local.json
+__pycache__/
+*.pyc
+
+# one-off source dumps dropped in the root
+/*-transcript*.md

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Make explainer videos without a Claude Code session. See pipeline/explain.py.
+cd "$(dirname "$0")" && exec .venv/bin/python -W ignore pipeline/explain.py "$@"
