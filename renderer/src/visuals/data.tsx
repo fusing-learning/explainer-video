@@ -1,8 +1,8 @@
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
-import { EASE, EASE_IN_OUT, cueFrame, enter, prog, rand, useScene } from "../lib/anim";
-import { MONO, alpha, resolveColor, usePalette } from "../lib/theme";
-import { Box, CountUp, Legend, Mono } from "../lib/ui";
+import { EASE, EASE_IN_OUT, cueFrame, enter, formatNumber, prog, rand, useScene } from "../lib/anim";
+import { MONO, alpha, oriented, resolveColor, useLayout, usePalette } from "../lib/theme";
+import { Box, CountUp, Legend, Mono, splitNumber } from "../lib/ui";
 import type { Scene, Visual } from "../lib/types";
 
 type Props = { v: Visual; box: Box };
@@ -21,16 +21,23 @@ export function Stat({ v, box }: Props) {
   const frame = useCurrentFrame();
   const at = cueFrame(scene, v.at ?? 0);
   const color = resolveColor(p, v.color);
-  const size = v.size ?? 190;
-  const chart = v.chart as Visual | undefined;
-  const side = v.chartSide === "right";
+  const { portrait } = useLayout();
+  const chart = v.chart ? oriented(v.chart as Visual, portrait) : undefined;
+  // Vertical: a side chart goes below the number instead.
+  const side = v.chartSide === "right" && !portrait;
+  const cw = side ? v.chartWidth ?? Math.round(box.w * 0.42) : 0;
+  // Shrink a long value to fit the width it has (Geist Mono glyphs are 0.6em wide).
+  const sp = splitNumber(v.value ?? 0);
+  const shown = sp.num === null ? String(v.value) : sp.prefix + formatNumber(sp.num, v.decimals ?? sp.decimals, sp.sep || Math.abs(sp.num) >= 1000) + sp.suffix;
+  const chars = String(v.prefix ?? "").length + shown.length + String(v.suffix ?? "").length;
+  const size = Math.min(v.size ?? 190, Math.floor((side ? box.w - cw - 40 : box.w) / (Math.max(1, chars) * 0.6)));
   // A total over a time series counts up in step with the sweep unless told otherwise.
   const followsChart = chart?.type === "series" && v.countUntil === undefined && v.countWithChart !== false;
   const belowAt = cueFrame(scene, v.belowAt ?? v.at ?? 0);
   const numberBlock = (
     <div>
       {v.label && <div style={{ fontFamily: MONO, fontSize: 26, color: p.muted, marginBottom: 6, ...enter(frame, at - 8) }}>{v.label}</div>}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 30, ...enter(frame, at - 6, 14, 8) }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 30, rowGap: 12, ...enter(frame, at - 6, 14, 8) }}>
         <div style={{ fontFamily: MONO, fontSize: size, lineHeight: 1, color, letterSpacing: "-0.03em" }}>
           <CountUp value={v.value ?? 0} from={v.from ?? 0} start={at} dur={v.countUntil !== undefined ? Math.max(20, cueFrame(scene, v.countUntil) - at) : v.countDur ?? 40}
             progress={followsChart ? seriesCumulative(scene, { ...chart, at: chart!.at ?? v.chartAt ?? v.at ?? 0 }, frame) : undefined} prefix={v.prefix ?? ""} suffix={v.suffix ?? ""} decimals={v.decimals} />
@@ -54,7 +61,6 @@ export function Stat({ v, box }: Props) {
   const chartV = { ...chart, at: chart.at ?? v.chartAt ?? v.at ?? 0 };
   const numH = size + (v.label ? 40 : 0) + (v.below ? 56 : 0) + (v.legend ? 50 : 0) + 40;
   if (side) {
-    const cw = v.chartWidth ?? Math.round(box.w * 0.42);
     return (
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: box.w }}>
         {numberBlock}
@@ -65,7 +71,7 @@ export function Stat({ v, box }: Props) {
   return (
     <div>
       {numberBlock}
-      <div style={{ marginTop: 34 }}>{Chart ? <Chart v={chartV} box={{ w: v.chartWidth ?? box.w, h: Math.max(140, box.h - numH) }} /> : null}</div>
+      <div style={{ marginTop: 34 }}>{Chart ? <Chart v={chartV} box={{ w: Math.min(box.w, v.chartWidth ?? box.w), h: Math.max(140, box.h - numH) }} /> : null}</div>
     </div>
   );
 }
@@ -79,15 +85,18 @@ export function Bars({ v, box }: Props) {
   const at = cueFrame(scene, v.at ?? 0);
   const stagger = v.stagger ?? 4;
   const hasDots = bars.some((b) => b.dot !== undefined);
-  const labelH = 40;
-  const topPad = hasDots ? 70 : v.showValues ? 44 : 10;
-  const legendH = v.legend ? 44 : 0;
-  const noteH = v.note ? 44 : 0;
-  const H = Math.min(v.height ?? 420, box.h - legendH - noteH);
-  const chartH = H - labelH - topPad;
   const W = Math.min(box.w, v.width ?? box.w);
   const n = Math.max(1, bars.length);
   const slot = W / n;
+  // Labels too wide for their slot alternate between two rows.
+  const staggerLabels = bars.some((b) => (b.label ?? "").length * 12 > slot - 8);
+  const labelH = staggerLabels ? 64 : 40;
+  const topPad = hasDots ? 70 : v.showValues ? 44 : 10;
+  const legendH = v.legend ? 44 : 0;
+  const noteH = v.note ? 44 : 0;
+  const { portrait } = useLayout();
+  const H = Math.min(v.height ?? (portrait ? 560 : 420), box.h - legendH - noteH);
+  const chartH = H - labelH - topPad;
   const bw = Math.min(v.barWidth ?? 130, slot * 0.66);
   const totals = bars.map((b) => (b.stack ? b.stack.reduce((a, c) => a + c, 0) : b.value ?? 0));
   const max = v.max ?? Math.max(1, ...totals);
@@ -128,7 +137,7 @@ export function Bars({ v, box }: Props) {
                 </g>
               )}
               {b.label && (
-                <text x={x + bw / 2} y={topPad + chartH + 32} fill={p.muted} fontFamily={MONO} fontSize={20} textAnchor="middle" opacity={prog(frame, at - 6, 12)}>
+                <text x={x + bw / 2} y={topPad + chartH + 32 + (staggerLabels && i % 2 ? 26 : 0)} fill={p.muted} fontFamily={MONO} fontSize={20} textAnchor="middle" opacity={prog(frame, at - 6, 12)}>
                   {b.label}
                 </text>
               )}
@@ -175,7 +184,8 @@ export function Series({ v, box }: Props) {
   const tickH = 36;
   const noteH = v.note ? 44 : 0;
   const legendH = v.legend ? 44 : 0;
-  const H = Math.min(v.height ?? 380, box.h - noteH - legendH);
+  const { portrait } = useLayout();
+  const H = Math.min(v.height ?? (portrait ? 520 : 380), box.h - noteH - legendH);
   const topPad = 40;
   const chartH = H - tickH - topPad;
   const total = vals.map((x, i) => x + (vals2?.[i] ?? 0));
@@ -187,7 +197,14 @@ export function Series({ v, box }: Props) {
   let peakI = 0;
   total.forEach((x, i) => x > total[peakI] && (peakI = i));
   const markers: { i: number; label: string; color?: string; at?: number | string }[] = v.markers ?? [];
-  const ticks: { i: number; label: string }[] = v.ticks ?? [];
+  // Skip tick labels that would run into the one before (dense ticks, narrow frame).
+  let tickEnd = -Infinity;
+  const ticks = ((v.ticks ?? []) as { i: number; label: string }[]).filter((t) => {
+    const x = t.i * step;
+    if (x < tickEnd) return false;
+    tickEnd = x + t.label.length * 12 + 16;
+    return true;
+  });
   return (
     <div>
       {v.legend && <div style={{ marginBottom: 16 }}><Legend items={v.legend} at={at} /></div>}
@@ -360,8 +377,10 @@ export function Spark({ v, box }: Props) {
   const n = Math.max(2, vals.length);
   const at = cueFrame(scene, v.at ?? 0);
   const dur = v.dur ?? 50;
-  const W = Math.min(box.w, v.width ?? box.w * (v.side ? 0.6 : 1));
-  const H = Math.min(v.height ?? 220, box.h - 60);
+  // Vertical: the side value goes under the line, which takes the full width.
+  const { portrait } = useLayout();
+  const W = portrait ? box.w : Math.min(box.w, v.width ?? box.w * (v.side ? 0.6 : 1));
+  const H = Math.min(v.height ?? (portrait ? 300 : 220), box.h - (portrait && v.side ? 240 : 60));
   const max = v.max ?? Math.max(...vals);
   const min = v.min ?? Math.min(0, ...vals);
   const pts = vals.map((y, i) => [(i / (n - 1)) * W, H - ((y - min) / Math.max(1e-6, max - min)) * (H - 20) - 10]);
@@ -380,7 +399,7 @@ export function Spark({ v, box }: Props) {
   const side = v.side as { value: number | string; note?: string; color?: string; at?: number | string } | undefined;
   const sideAt = side ? cueFrame(scene, side.at ?? v.at ?? 0) : 0;
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", width: box.w }}>
+    <div style={{ display: "flex", flexDirection: portrait ? "column" : "row", alignItems: portrait ? "flex-start" : "flex-end", justifyContent: "space-between", gap: portrait ? 30 : 0, width: box.w }}>
       <div>
         {v.label && <div style={{ marginBottom: 14, ...enter(frame, at - 6) }}><Mono size={22}>{v.label}</Mono></div>}
         <svg width={W} height={H + 40} style={{ overflow: "visible" }}>
@@ -390,18 +409,19 @@ export function Spark({ v, box }: Props) {
             const o = shownN >= a.i ? prog(frame, at + (dur * a.i) / (n - 1), 12) : 0;
             const [x, y] = pts[Math.min(a.i, n - 1)];
             const ac = resolveColor(p, a.color ?? "text");
+            const flip = x + 8 + a.text.length * 12.6 > W;
             return (
               <g key={k} opacity={o}>
                 <line x1={x} x2={x} y1={a.below ? y + 8 : y - 8} y2={a.below ? H + 10 : y - 40} stroke={ac} strokeWidth={1.5} strokeDasharray="3 4" />
-                <text x={x + 8} y={a.below ? H + 34 : y - 46} fill={ac} fontFamily={MONO} fontSize={21}>{a.text}</text>
+                <text x={flip ? x - 8 : x + 8} y={a.below ? H + 34 : y - 46} fill={ac} fontFamily={MONO} fontSize={21} textAnchor={flip ? "end" : "start"}>{a.text}</text>
               </g>
             );
           })}
         </svg>
       </div>
       {side && (
-        <div style={{ textAlign: "right", ...enter(frame, sideAt) }}>
-          <div style={{ fontFamily: MONO, fontSize: Math.min(130, Math.floor((box.w - W - 40) / (Math.max(4, String(side.value).length) * 0.6))), lineHeight: 1, whiteSpace: "nowrap", color: resolveColor(p, side.color ?? "accent") }}>
+        <div style={{ textAlign: portrait ? "left" : "right", ...enter(frame, sideAt) }}>
+          <div style={{ fontFamily: MONO, fontSize: Math.min(130, Math.floor((portrait ? box.w : box.w - W - 40) / (Math.max(4, String(side.value).length) * 0.6))), lineHeight: 1, whiteSpace: "nowrap", color: resolveColor(p, side.color ?? "accent") }}>
             <CountUp value={side.value} start={sideAt} />
           </div>
           {side.note && <Mono size={24}>{side.note}</Mono>}
@@ -429,6 +449,7 @@ export function TimelineVisual({ v, box }: Props) {
   const fmt = (x: number) => (v.tickFormat ? String(v.tickFormat).replace("{v}", (x > 0 && v.signed ? "+" : "") + x) : (x > 0 && v.signed ? "+" : "") + x);
   const spans: { from: number; to: number; color?: string; label?: string; at?: number | string; thin?: boolean }[] = v.spans ?? [];
   const events: { t: number; label: string; sub?: string; color?: string; at?: number | string; below?: boolean }[] = v.events ?? [];
+  const labels = placeLabels(events.map((e) => ({ x: X(e.t), w: Math.max(e.label.length * 13.2, (e.sub?.length ?? 0) * 11.4) })), W);
   return (
     <svg width={W} height={H} style={{ overflow: "visible" }}>
       {ticks.map((t, k) => (
@@ -457,16 +478,49 @@ export function TimelineVisual({ v, box }: Props) {
         const o = prog(frame, eAt, 12);
         const col = resolveColor(p, e.color ?? "accent");
         const x = X(e.t);
+        const { anchor, row } = labels[k];
+        const lx = anchor === "start" ? x - 3 : anchor === "end" ? x + 3 : x;
+        const ly = barY - 76 - row * 52;
         return (
           <g key={k} opacity={o}>
             <rect x={x - 3} y={barY - 36} width={6} height={72} fill={col} />
-            <text x={x} y={barY - 76} fill={col} fontFamily={MONO} fontSize={22} textAnchor={x > W - 200 ? "end" : "middle"}>{e.label}</text>
-            {e.sub && <text x={x} y={barY - 50} fill={p.muted} fontFamily={MONO} fontSize={19} textAnchor={x > W - 200 ? "end" : "middle"}>{e.sub}</text>}
+            <text x={lx} y={ly} fill={col} fontFamily={MONO} fontSize={22} textAnchor={anchor}>{e.label}</text>
+            {e.sub && <text x={lx} y={ly + 26} fill={p.muted} fontFamily={MONO} fontSize={19} textAnchor={anchor}>{e.sub}</text>}
           </g>
         );
       })}
     </svg>
   );
+}
+
+type Anchor = "start" | "middle" | "end";
+
+/** Anchor and row for labels over points on an axis, so neighbours don't overlap: centered when
+ * there is room, else pushed to one side of the point, else raised a row. */
+function placeLabels(items: { x: number; w: number }[], W: number): { anchor: Anchor; row: number }[] {
+  const placed: { a: number; b: number; row: number }[] = [];
+  const order = items.map((_, i) => i).sort((i, j) => items[i].x - items[j].x);
+  const out: { anchor: Anchor; row: number }[] = new Array(items.length);
+  for (const i of order) {
+    const { x, w } = items[i];
+    const preferred: Anchor = x > W - 200 ? "end" : "middle";
+    const anchors: Anchor[] = [preferred, ...(["middle", "start", "end"] as Anchor[]).filter((a) => a !== preferred)];
+    const span = (a: Anchor): [number, number] => (a === "middle" ? [x - w / 2, x + w / 2] : a === "start" ? [x - 3, x - 3 + w] : [x + 3 - w, x + 3]);
+    const free = (a: number, b: number, row: number) => a > -20 && b < W + 20 && !placed.some((p) => p.row === row && a < p.b + 14 && b > p.a - 14);
+    let pick: { anchor: Anchor; row: number } | null = null;
+    for (let row = 0; row < 4 && !pick; row++) {
+      for (const anchor of anchors) {
+        const [a, b] = span(anchor);
+        if (free(a, b, row)) {
+          pick = { anchor, row };
+          placed.push({ a, b, row });
+          break;
+        }
+      }
+    }
+    out[i] = pick ?? { anchor: preferred, row: 0 };
+  }
+  return out;
 }
 
 function niceStep(raw: number): number {

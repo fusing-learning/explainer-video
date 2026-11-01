@@ -14,8 +14,9 @@ or attach files:
 
 Claude fetches each one. Paywalled pages are read through your logged-in
 Chrome via the Claude in Chrome extension. Claude reads the text and every
-image, writes the script, checks the layout, renders, and sends you the mp4.
-Videos land in `output/`, each with a short formatted text summary (`.md`) beside it.
+image, writes the script, checks the layout, renders, and sends you the mp4s.
+Videos land in `output/`: `<job>.mp4` (16:9), `<job>-vertical.mp4` (9:16, for
+phones), and a short formatted text summary (`<job>.md`).
 
 **Read-later inbox.** Add links to `inbox.md` as `- [ ] https://...`, then
 tell Claude "do my inbox", or run it unattended:
@@ -50,14 +51,20 @@ marked "needs browser" in the inbox for a Claude Code session to finish.
 fetch.py        source -> videos/<date>-<slug>/source/{content.md, images/, meta.json, links.json}
 script.json     written by Claude (session or write_script.py) per pipeline/prompts/script_guide.md
 build.py        voice (Gemini TTS, cached per scene) -> whisper word alignment -> timeline.json
-                -> Remotion render -> video.mp4 + output/<job>.mp4 + qa_sheet.jpg + output/<job>.md (summarize.py)
+                -> Remotion render (16:9 and 9:16) -> output/<job>.mp4, output/<job>-vertical.mp4
+                -> qa_sheet.jpg, qa_sheet-vertical.jpg, output/<job>.md (summarize.py)
 ```
 
 - `build.py <job> --check` validates the script, `--stills` renders one frame
-  per scene for a quick layout check, and `--draft` renders at half resolution.
+  per scene (both formats) for a quick layout check, `--draft` renders at half
+  resolution, and `--format landscape|vertical` makes only one of the two videos.
+- The vertical video uses the same timeline as the landscape one. Side-by-side
+  visuals stack, and the title and visual sit together above the captions. It is
+  laid out at 900×1600 and rendered at 1.2× to 1080×1920, so text is a little
+  larger relative to the frame.
 - Voice: Gemini `gemini-3.8-flash-tts`, voice `Charon`. Your tier allows 10
   requests/min, which a shared limiter handles. Falls back to macOS `say`.
-- Rendering takes about 3 minutes per minute of video. It runs in ~60 s chunks,
+- Rendering takes about 3 minutes per minute of video, per format. It runs in ~60 s chunks,
   each in a fresh Chrome, because a single long pass stalls when the Mac is
   unattended (macOS throttles the invisible Chrome after ~5 min). The chunks
   are stitched losslessly.

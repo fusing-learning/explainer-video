@@ -6,6 +6,7 @@
     build.py <job> --stills      voice + timeline, then render one still per scene (fast layout check)
     build.py <job> --draft       half-resolution render (faster)
     build.py <job> --no-render   stop after timeline.json
+    build.py <job> --format vertical|landscape   only one of the two videos (default: both)
 
 Re-running only re-synthesizes scenes whose narration changed (audio is cached by hash).
 """
@@ -36,6 +37,10 @@ GAP = 0.7  # default pause between scenes
 TAIL = 0.9  # after the last line, before the outro
 OUTRO = 4.0
 WPS = 2.6  # rough narration speed, words per second
+
+# format -> (composition, render scale, file suffix). Both share timeline.json. The vertical
+# composition is laid out at 900x1600 and scaled to 1080x1920 (see renderer/src/lib/theme.ts).
+FORMATS = {"landscape": ("Explainer", 1.0, ""), "vertical": ("ExplainerVertical", 1.2, "-vertical")}
 
 REQUIRED = {
     "headline": ["lines"], "text": ["text"], "quote": ["text"], "takeaway": ["text"], "points": ["items"],
@@ -293,16 +298,8 @@ def build_timeline(script: dict, job: Path, clips: list[Path]) -> dict:
     outro_from = f(narration_end)
     scenes_out.append({"id": "outro", "from": outro_from, "dur": f(total) - outro_from, "lines": [],
                        "visual": {"type": "outro", **source, "saved": script.get("saved", saved)}})
-
-    # loudness envelope for the progress strip (one value per 3 frames)
-    step = 3
-    hop = int(sr * step / FPS)
-    n = len(audio) // hop
-    rms = np.sqrt(np.mean((audio[: n * hop].astype(np.float32) / 32768.0).reshape(n, hop) ** 2, axis=1))
-    env = np.clip(rms / (np.percentile(rms[rms > 0.005], 95) if np.any(rms > 0.005) else 1), 0, 1)
     tl = {
-        "fps": FPS, "width": 1920, "height": 1080, "durationInFrames": f(total),
-        "audio": "narration.wav", "envelope": [round(float(x), 3) for x in env], "envelopeStep": step,
+        "fps": FPS, "width": 1920, "height": 1080, "durationInFrames": f(total), "audio": "narration.wav",
         "theme": script.get("theme") or {}, "source": source, "scenes": scenes_out,
         "captions": script.get("captions", True),
     }
@@ -338,14 +335,13 @@ def npx(args: list[str]) -> None:
 CHUNK = 1800  # frames per render pass (60 s of video)
 
 
-def render(job: Path, draft: bool) -> Path:
-    """Render in ~60 s chunks, each in a fresh browser, then stitch and add the narration.
+def render(job: Path, draft: bool, formats: list[str]) -> dict[str, Path]:
+    """Render each format in ~60 s chunks, each in a fresh browser, then stitch and add the narration.
 
     A single long pass with the system Chrome stalls ~5 minutes in when the Mac is
     unattended (macOS throttles the invisible Chrome app), so no pass is allowed to
     run that long. Chunks are retried independently.
     """
-    out = job / ("draft.mp4" if draft else "video.mp4")
     total = read_json(job / "timeline.json")["durationInFrames"]
     tmp = job / "chunks"
     shutil.rmtree(tmp, ignore_errors=True)
@@ -354,31 +350,39 @@ def render(job: Path, draft: bool) -> Path:
     base = ["--log=error", "--gl=swangle", "--timeout=120000", "--concurrency=6", "--muted",
             f"--props={job / 'timeline.json'}"]
     if draft:
-        base += ["--scale=0.5", "--crf=28"]
-    log(f"rendering {'draft ' if draft else ''}video ({total} frames)...")
+        base += ["--crf=28"]
+    n_chunks = (total + CHUNK - 1) // CHUNK
+    parts: dict[str, list[Path]] = {}
     with file_lock("render"):
         npx(["bundle", "src/index.ts", f"--public-dir={job / 'public'}", f"--out-dir={bundle}", "--log=error"])
-        parts = []
-        for k, a in enumerate(range(0, total, CHUNK)):
-            b = min(total, a + CHUNK) - 1
-            part = tmp / f"part{k:03d}.mp4"
-            for attempt in range(3):
-                try:
-                    npx(["render", str(bundle), "Explainer", str(part), f"--frames={a}-{b}", *base])
-                    break
-                except SystemExit as e:
-                    if attempt == 2:
-                        raise
-                    log(f"  chunk {k} attempt {attempt + 1} failed, retrying: {str(e)[-200:]}")
-            log(f"  chunk {k + 1}/{(total + CHUNK - 1) // CHUNK} done")
-            parts.append(part)
-    (tmp / "parts.txt").write_text("".join(f"file '{p.name}'\n" for p in parts))
-    silent = tmp / "video.mp4"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(tmp / "parts.txt"),
-                    "-c", "copy", str(silent)], check=True)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(silent), "-i", str(job / "public" / "narration.wav"),
-                    "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-af", "apad", "-c:a", "aac", "-b:a", "192k",
-                    "-t", f"{total / FPS:.3f}", "-movflags", "+faststart", str(out)], check=True)
+        for fmt in formats:
+            comp, scale, suffix = FORMATS[fmt]
+            scale *= 0.5 if draft else 1
+            log(f"rendering {'draft ' if draft else ''}{fmt} video ({total} frames)...")
+            parts[fmt] = []
+            for k, a in enumerate(range(0, total, CHUNK)):
+                b = min(total, a + CHUNK) - 1
+                part = tmp / f"{fmt}{k:03d}.mp4"
+                for attempt in range(3):
+                    try:
+                        npx(["render", str(bundle), comp, str(part), f"--frames={a}-{b}", f"--scale={scale:g}", *base])
+                        break
+                    except SystemExit as e:
+                        if attempt == 2:
+                            raise
+                        log(f"  chunk {k} attempt {attempt + 1} failed, retrying: {str(e)[-200:]}")
+                log(f"  chunk {k + 1}/{n_chunks} done")
+                parts[fmt].append(part)
+    out = {}
+    for fmt, fparts in parts.items():
+        out[fmt] = job / f"{'draft' if draft else 'video'}{FORMATS[fmt][2]}.mp4"
+        (tmp / "parts.txt").write_text("".join(f"file '{p.name}'\n" for p in fparts))
+        silent = tmp / "video.mp4"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(tmp / "parts.txt"),
+                        "-c", "copy", str(silent)], check=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(silent), "-i", str(job / "public" / "narration.wav"),
+                        "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-af", "apad", "-c:a", "aac", "-b:a", "192k",
+                        "-t", f"{total / FPS:.3f}", "-movflags", "+faststart", str(out[fmt])], check=True)
     shutil.rmtree(tmp, ignore_errors=True)
     return out
 
@@ -393,42 +397,50 @@ def scene_probe_frames(tl: dict) -> list[tuple[str, int]]:
     return out
 
 
-def qa_sheet_from_video(job: Path, video: Path, tl: dict) -> Path:
-    tmp = job / "qa"
+def qa_sheet_from_video(job: Path, video: Path, tl: dict, fmt: str) -> Path:
+    suffix = FORMATS[fmt][2]
+    tmp = job / f"qa{suffix}"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir()
     frames = []
     for k, (sid, fr) in enumerate(scene_probe_frames(tl)):
         f = tmp / f"{k:02d}-{sid}.jpg"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{fr / FPS:.3f}", "-i", str(video), "-frames:v", "1",
-                        "-vf", "scale=960:-2", str(f)], check=True)
+                        "-vf", "scale=960:-2" if fmt == "landscape" else "scale=-2:960", str(f)], check=True)
         frames.append(f)
-    return tile(frames, job / "qa_sheet.jpg")
+    return tile(frames, job / f"qa_sheet{suffix}.jpg", fmt)
 
 
-def stills(job: Path, tl: dict) -> Path:
-    tmp = job / "qa"
-    shutil.rmtree(tmp, ignore_errors=True)
-    tmp.mkdir()
+def stills(job: Path, tl: dict, formats: list[str]) -> list[Path]:
+    """One still per scene and format, rendered from one bundle and one browser."""
     probes = scene_probe_frames(tl)
-    spec = [{"frame": fr, "out": str(tmp / f"{k:02d}-{sid}.jpg")} for k, (sid, fr) in enumerate(probes)]
-    (tmp / "frames.json").write_text(json.dumps(spec))
+    spec, outs = [], {}
+    for fmt in formats:
+        comp, scale, suffix = FORMATS[fmt]
+        tmp = job / f"qa{suffix}"
+        shutil.rmtree(tmp, ignore_errors=True)
+        tmp.mkdir()
+        outs[fmt] = [tmp / f"{k:02d}-{sid}.jpg" for k, (sid, _) in enumerate(probes)]
+        spec += [{"id": comp, "scale": scale, "frame": fr, "out": str(o)} for (_, fr), o in zip(probes, outs[fmt])]
+    frames_json = job / "qa_frames.json"
+    frames_json.write_text(json.dumps(spec))
     with file_lock("render"):
-        p = subprocess.run(["node", "scripts/stills.mjs", str(job / "timeline.json"), str(job / "public"), str(tmp / "frames.json")],
+        p = subprocess.run(["node", "scripts/stills.mjs", str(job / "timeline.json"), str(job / "public"), str(frames_json)],
                            cwd=RENDERER, text=True, capture_output=True)
+    frames_json.unlink(missing_ok=True)
     if p.returncode != 0:
         raise SystemExit("stills failed:\n" + (p.stdout + p.stderr)[-3000:])
-    return tile([Path(s["out"]) for s in spec], job / "qa_sheet.jpg")
+    return [tile(outs[fmt], job / f"qa_sheet{FORMATS[fmt][2]}.jpg", fmt) for fmt in formats]
 
 
-def tile(frames: list[Path], out: Path) -> Path:
-    cols = 3
+def tile(frames: list[Path], out: Path, fmt: str) -> Path:
+    cols, (w, h) = (3, (640, 360)) if fmt == "landscape" else (5, (360, 640))
     rows = (len(frames) + cols - 1) // cols
     inputs = []
     for f in frames:
         inputs += ["-i", str(f)]
-    layout = "|".join(f"{(k % cols) * 640}_{(k // cols) * 360}" for k in range(len(frames)))
-    scaled = "".join(f"[{k}]scale=640:360[v{k}];" for k in range(len(frames)))
+    layout = "|".join(f"{(k % cols) * w}_{(k // cols) * h}" for k in range(len(frames)))
+    scaled = "".join(f"[{k}]scale={w}:{h}[v{k}];" for k in range(len(frames)))
     stack = "".join(f"[v{k}]" for k in range(len(frames)))
     if len(frames) == 1:
         shutil.copy(frames[0], out)
@@ -440,9 +452,9 @@ def tile(frames: list[Path], out: Path) -> Path:
     return out
 
 
-def publish(job: Path, video: Path) -> Path:
+def publish(job: Path, video: Path, fmt: str) -> Path:
     OUTPUT.mkdir(exist_ok=True)
-    dst = OUTPUT / f"{job.name}.mp4"
+    dst = OUTPUT / f"{job.name}{FORMATS[fmt][2]}.mp4"
     shutil.copy(video, dst)
     return dst
 
@@ -466,6 +478,7 @@ def main():
     ap.add_argument("--check", action="store_true", help="validate script.json and stop")
     ap.add_argument("--stills", action="store_true", help="render one still per scene instead of the video")
     ap.add_argument("--draft", action="store_true", help="half-resolution render")
+    ap.add_argument("--format", default="both", choices=["both", *FORMATS], help="which video(s) to make")
     ap.add_argument("--no-render", action="store_true")
     ap.add_argument("--tts", default="gemini", choices=["gemini", "say"])
     a = ap.parse_args()
@@ -483,23 +496,30 @@ def main():
     if a.check:
         log("script ok")
         return
+    formats = list(FORMATS) if a.format == "both" else [a.format]
     clips = synth_scenes(script, job, a.tts)
     tl = build_timeline(script, job, clips)
     if a.no_render:
         return
     if a.stills:
-        print(stills(job, tl))
+        for sheet in stills(job, tl, formats):
+            print(sheet)
         return
-    video = render(job, a.draft)
-    sheet = qa_sheet_from_video(job, video, tl)
+    videos = render(job, a.draft, formats)
+    sheets = [qa_sheet_from_video(job, video, tl, fmt) for fmt, video in videos.items()]
+    # one path per line on stdout (explain.py records them in the inbox)
     if not a.draft:
-        final = publish(job, video)
-        log(f"done: {final}")
+        finals = [publish(job, video, fmt) for fmt, video in videos.items()]
+        for final in finals:
+            log(f"done: {final}")
         summary(job)
-        print(final)
+        for final in finals:
+            print(final)
     else:
-        print(video)
-    log(f"QA sheet: {sheet}")
+        for video in videos.values():
+            print(video)
+    for sheet in sheets:
+        log(f"QA sheet: {sheet}")
 
 
 if __name__ == "__main__":

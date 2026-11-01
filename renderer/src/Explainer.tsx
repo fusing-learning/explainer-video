@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { AbsoluteFill, Html5Audio, Sequence, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { SceneContext, enter } from "./lib/anim";
-import { CAPTION_TOP, H, MONO, PAD, PaletteContext, SANS, TOP, VIS_BOTTOM, VIS_TOP, W, makePalette, usePalette } from "./lib/theme";
+import { MONO, PaletteContext, SANS, makePalette, oriented, useLayout, usePalette } from "./lib/theme";
 import type { Scene, Timeline } from "./lib/types";
 import { VisualView } from "./visuals";
 
@@ -10,27 +10,40 @@ const CENTERED = new Set(["text", "quote", "takeaway", "points", "compare", "car
 
 function SceneFrame({ scene }: { scene: Scene }) {
   const p = usePalette();
+  const L = useLayout();
   const frame = useCurrentFrame();
   const out = interpolate(frame, [scene.dur - FADE, scene.dur], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const inn = interpolate(frame, [0, FADE], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const hasTitle = Boolean(scene.title);
-  const top = hasTitle ? (scene.subtitle ? VIS_TOP + 6 : VIS_TOP - 36) : TOP + 20;
-  const box = { w: W - PAD * 2, h: VIS_BOTTOM - top };
+  const top = hasTitle ? (scene.subtitle ? L.VIS_TOP + 6 : L.VIS_TOP - 36) : L.TOP + 20;
+  const box = { w: L.W - L.PAD * 2, h: L.VIS_BOTTOM - top };
+  const v = oriented(scene.visual, L.portrait);
+  const title = hasTitle && (
+    <div style={{ width: box.w, ...enter(frame, 0, 14, 6) }}>
+      <div style={{ fontFamily: SANS, fontSize: 40, fontWeight: 500, color: p.text }}>{scene.title}</div>
+      {scene.subtitle && <div style={{ fontFamily: MONO, fontSize: 24, color: p.muted, marginTop: 10 }}>{scene.subtitle}</div>}
+    </div>
+  );
+  // Vertical: title and visual sit together in the middle of the space above the captions.
+  if (L.portrait) {
+    return (
+      <AbsoluteFill style={{ opacity: Math.min(out, inn) }}>
+        <div style={{ position: "absolute", left: L.PAD, top: L.TOP, width: box.w, height: L.VIS_BOTTOM - L.TOP, display: "flex", flexDirection: "column", justifyContent: "safe center" }}>
+          {title && <div style={{ marginBottom: 50 }}>{title}</div>}
+          <VisualView v={{ ...v, top: v.top ?? 0 }} box={box} />
+        </div>
+      </AbsoluteFill>
+    );
+  }
   // Word-led visuals sit in the middle of the frame; data visuals hang from the title like a chart.
-  const v = scene.visual;
   const centered = v.valign
     ? v.valign === "center"
     : (CENTERED.has(v.type) && !(v.type === "chips" && v.swarm)) || (v.type === "stat" && !v.chart);
   return (
     <AbsoluteFill style={{ opacity: Math.min(out, inn) }}>
-      {hasTitle && (
-        <div style={{ position: "absolute", left: PAD, top: TOP, ...enter(frame, 0, 14, 6) }}>
-          <div style={{ fontFamily: SANS, fontSize: 40, fontWeight: 500, color: p.text }}>{scene.title}</div>
-          {scene.subtitle && <div style={{ fontFamily: MONO, fontSize: 24, color: p.muted, marginTop: 10 }}>{scene.subtitle}</div>}
-        </div>
-      )}
-      <div style={{ position: "absolute", left: PAD, top, width: box.w, height: box.h, display: "flex", flexDirection: "column", justifyContent: centered ? "center" : "flex-start", paddingBottom: centered ? 40 : 0, boxSizing: "border-box" }}>
-        <VisualView v={centered ? { ...scene.visual, top: scene.visual.top ?? 0 } : scene.visual} box={box} />
+      {title && <div style={{ position: "absolute", left: L.PAD, top: L.TOP }}>{title}</div>}
+      <div style={{ position: "absolute", left: L.PAD, top, width: box.w, height: box.h, display: "flex", flexDirection: "column", justifyContent: centered ? "center" : "flex-start", paddingBottom: centered ? 40 : 0, boxSizing: "border-box" }}>
+        <VisualView v={centered ? { ...v, top: v.top ?? 0 } : v} box={box} />
       </div>
     </AbsoluteFill>
   );
@@ -44,33 +57,15 @@ interface Cap {
 
 function Captions({ caps }: { caps: Cap[] }) {
   const p = usePalette();
+  const L = useLayout();
   const frame = useCurrentFrame();
   const cur = caps.find((c) => frame >= c.from && frame < c.to);
   if (!cur) return null;
   const o = interpolate(frame, [cur.from, cur.from + 5, cur.to - 5, cur.to], [0, 1, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   return (
-    <div style={{ position: "absolute", left: PAD, top: CAPTION_TOP, width: 1320, fontFamily: SANS, fontSize: 44, fontWeight: 500, lineHeight: 1.3, color: p.text, opacity: o }}>
+    <div style={{ position: "absolute", left: L.PAD, top: L.CAPTION_TOP, width: L.CAPTION_W, fontFamily: SANS, fontSize: 44, fontWeight: 500, lineHeight: 1.3, color: p.text, opacity: o }}>
       {cur.text}
     </div>
-  );
-}
-
-/** Thin progress strip at the bottom, drawn from the narration's loudness. */
-function ProgressWave({ env, step, total }: { env: number[]; step: number; total: number }) {
-  const p = usePalette();
-  const frame = useCurrentFrame();
-  const width = W - PAD * 2;
-  const n = env.length || 1;
-  const bw = width / n;
-  const played = frame / step;
-  return (
-    <svg width={width} height={34} style={{ position: "absolute", left: PAD, top: H - 54 }}>
-      <line x1={0} x2={width} y1={33} y2={33} stroke={p.line} strokeWidth={2} />
-      <line x1={0} x2={Math.min(width, (frame / total) * width)} y1={33} y2={33} stroke={p.accent3} strokeWidth={2} />
-      {env.map((e, i) =>
-        i <= played && e > 0.02 ? <rect key={i} x={i * bw} y={33 - e * 30} width={Math.max(1, bw * 0.6)} height={e * 30} fill={p.accent} opacity={0.35 + 0.5 * e} /> : null,
-      )}
-    </svg>
   );
 }
 
@@ -100,7 +95,6 @@ export const Explainer: React.FC<Timeline> = (t) => {
           </Sequence>
         ))}
         {t.captions !== false && <Captions caps={caps} />}
-        {t.envelope?.length > 0 && <ProgressWave env={t.envelope} step={t.envelopeStep} total={t.durationInFrames} />}
       </AbsoluteFill>
     </PaletteContext.Provider>
   );

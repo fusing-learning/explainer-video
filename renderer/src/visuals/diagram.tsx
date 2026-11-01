@@ -1,7 +1,7 @@
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { EASE_IN_OUT, cueFrame, enter, prog, rand, useScene } from "../lib/anim";
-import { MONO, SANS, alpha, resolveColor, usePalette } from "../lib/theme";
+import { MONO, SANS, alpha, resolveColor, useLayout, usePalette } from "../lib/theme";
 import { Box, Mono } from "../lib/ui";
 import type { Visual } from "../lib/types";
 
@@ -17,15 +17,16 @@ export function Chips({ v, box }: Props) {
   const at = cueFrame(scene, v.at ?? 0);
   const n = Math.max(1, items.length);
   const gap = 26;
-  const perRow = Math.min(n, v.perRow ?? 6);
   const big = !v.swarm && n <= 4;
+  const { portrait } = useLayout();
+  const perRow = Math.min(n, portrait ? v.vertical?.perRow ?? (big ? 2 : 3) : v.perRow ?? 6);
   const w = Math.min(big ? 380 : 260, (box.w - gap * (perRow - 1)) / perRow);
   const swarmAt = v.swarm ? cueFrame(scene, v.swarm.at ?? 1) : 0;
   const cells = v.swarm?.cells ?? 10;
   return (
     <div>
       {tags.length > 0 && (
-        <div style={{ display: "flex", gap: 26, marginBottom: 34 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", columnGap: 26, rowGap: 12, marginBottom: 34 }}>
           {tags.map((t, i) => {
             const tAt = cueFrame(scene, t.at ?? at + i * 8);
             const on = prog(frame, tAt, 10);
@@ -69,17 +70,20 @@ export function Chips({ v, box }: Props) {
   );
 }
 
-/** A process as a row of stages inside a frame; a pulse travels through them (and loops if loop=true). */
+/** A process as a row of stages inside a frame; a pulse travels through them (and loops if loop=true).
+ * Vertical: the stages stack as rows, and a stage glows while the pulse runs down its right edge. */
 export function Flow({ v, box }: Props) {
   const p = usePalette();
   const scene = useScene();
   const frame = useCurrentFrame();
+  const { portrait } = useLayout();
   const steps: { label?: string; text: string; at?: number | string }[] = (v.steps ?? []).map((s: unknown) => (typeof s === "string" ? { text: s } : s));
   const n = Math.max(1, steps.length);
   const at = cueFrame(scene, v.at ?? 0);
-  const W = Math.min(box.w, v.width ?? box.w);
-  const H = v.height ?? 230;
+  const W = portrait ? box.w : Math.min(box.w, v.width ?? box.w);
+  const H = portrait ? Math.min(box.h - (v.note ? 70 : 0), v.vertical?.height ?? n * 170) : v.height ?? 230;
   const colW = W / n;
+  const rowH = H / n;
   const boxOn = prog(frame, at - 8, 18);
   // The pulse travels the perimeter once per `period` frames after the last stage has appeared.
   const stepAt = (s: { at?: number | string }, i: number) => (s.at !== undefined ? cueFrame(scene, s.at) : at + i * 10);
@@ -96,19 +100,23 @@ export function Flow({ v, box }: Props) {
           <rect x={1} y={1} width={W - 2} height={H - 2} fill="none" stroke={alpha(p.accent, 0.35)} strokeWidth={2}
             strokeDasharray={perim} strokeDashoffset={perim * (1 - boxOn)} />
           {frame > lastAt && <rect x={pos[0] - 9} y={pos[1] - 9} width={18} height={18} fill={p.accent} />}
-          {steps.slice(1).map((_, i) => (
-            <line key={i} x1={colW * (i + 1)} x2={colW * (i + 1)} y1={24} y2={H - 24} stroke={p.line} strokeWidth={1.5} opacity={boxOn} />
-          ))}
+          {steps.slice(1).map((_, i) =>
+            portrait ? (
+              <line key={i} x1={24} x2={W - 24} y1={rowH * (i + 1)} y2={rowH * (i + 1)} stroke={p.line} strokeWidth={1.5} opacity={boxOn} />
+            ) : (
+              <line key={i} x1={colW * (i + 1)} x2={colW * (i + 1)} y1={24} y2={H - 24} stroke={p.line} strokeWidth={1.5} opacity={boxOn} />
+            ),
+          )}
         </svg>
-        <div style={{ display: "flex", position: "absolute", inset: 0 }}>
+        <div style={{ display: "flex", flexDirection: portrait ? "column" : "row", position: "absolute", inset: 0 }}>
           {steps.map((s, i) => {
             const sAt = stepAt(s, i);
             // the stage currently being visited glows
-            const visiting = frame > lastAt && Math.floor((pos[0] / W) * n) === i && pos[1] === 0;
+            const visiting = frame > lastAt && (portrait ? pos[0] === W && Math.floor((pos[1] / H) * n) === i : Math.floor((pos[0] / W) * n) === i && pos[1] === 0);
             return (
-              <div key={i} style={{ width: colW, padding: "40px 36px", boxSizing: "border-box", ...enter(frame, sAt, 14, 8) }}>
-                {s.label && <div style={{ fontFamily: MONO, fontSize: 21, color: p.accent, marginBottom: 12 }}>{s.label}</div>}
-                <div style={{ fontFamily: SANS, fontSize: n > 4 ? 28 : 34, color: visiting ? p.accent : p.text, lineHeight: 1.3, fontWeight: 500 }}>{s.text}</div>
+              <div key={i} style={{ ...(portrait ? { height: rowH, padding: "0 36px", display: "flex", flexDirection: "column", justifyContent: "center" } : { width: colW, padding: "40px 36px" }), boxSizing: "border-box", ...enter(frame, sAt, 14, 8) }}>
+                {s.label && <div style={{ fontFamily: MONO, fontSize: 21, color: p.accent, marginBottom: portrait ? 8 : 12 }}>{s.label}</div>}
+                <div style={{ fontFamily: SANS, fontSize: portrait ? 36 : n > 4 ? 28 : 34, color: visiting ? p.accent : p.text, lineHeight: 1.3, fontWeight: 500 }}>{s.text}</div>
               </div>
             );
           })}
@@ -127,8 +135,11 @@ export function Network({ v, box }: Props) {
   const frame = useCurrentFrame();
   const at = cueFrame(scene, v.at ?? 0);
   const seed = v.seed ?? 7;
-  const W = Math.min(box.w, v.width ?? box.w * 0.72);
-  const H = Math.min(box.h - 40, v.height ?? 360);
+  // Vertical: the grid takes the full width and the side value goes under it.
+  const { portrait } = useLayout();
+  const side = v.side as { label: string; value: string | number; at?: number | string } | undefined;
+  const W = portrait ? box.w : Math.min(box.w, v.width ?? box.w * 0.72);
+  const H = portrait ? Math.min(box.h - (side ? 150 : 60), v.vertical?.height ?? 560) : Math.min(box.h - 40, v.height ?? 360);
   const g = v.grid ?? 34;
   const cols = Math.floor(W / g);
   const rows = Math.floor(H / g);
@@ -153,9 +164,8 @@ export function Network({ v, box }: Props) {
   const sweep = v.sweep as { at?: number | string; label?: string } | undefined;
   const sweepAt = sweep ? cueFrame(scene, sweep.at ?? 1) : 0;
   const sweepX = sweep ? interpolate(frame, [sweepAt, sweepAt + 70], [0, W], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE_IN_OUT }) : -1;
-  const side = v.side as { label: string; value: string | number; at?: number | string } | undefined;
   return (
-    <div style={{ display: "flex", gap: 50, alignItems: "flex-start" }}>
+    <div style={{ display: "flex", flexDirection: portrait ? "column" : "row", gap: portrait ? 30 : 50, alignItems: "flex-start" }}>
       <div>
         <svg width={W} height={H}>
           {Array.from({ length: cols * rows }, (_, k) => (

@@ -1,7 +1,8 @@
 # Explainer script guide
 
 You are writing `script.json` for a narrated explainer video (1920x1080, dark
-background, data-first motion graphics, one caption line at a time). The viewer
+background, data-first motion graphics, one caption line at a time). The same
+script also renders a 9:16 vertical version for phones (see "Vertical version"). The viewer
 wants the substance of a piece they don't have time to read. Clear beats clever.
 Faithful beats dramatic.
 
@@ -254,10 +255,28 @@ Items can be `{label, sub, at}`.
 ```
 `focus` is [x, y, scale] in 0–1 image coordinates.
 
+## Vertical version
+
+Every script also renders at 9:16. Write for 16:9; the renderer adapts:
+visuals get a frame about 780 wide and 900 tall, the title and visual are
+centered together above the captions, compare/cards/flow stack vertically,
+points use one column, chips go 2–3 per row, stat side charts move under the
+number, and long headline lines wrap.
+
+When a scene needs something different only in the vertical version, add a
+`vertical` object to its visual; its fields replace the visual's own there:
+```json
+{"type": "bars", "bars": [...], "height": 360, "vertical": {"height": 520, "showValues": false}}
+```
+Keep vertical-only fixes small: fewer bars, a shorter label, a smaller `size`.
+`points` (`columns`), `chips` (`perRow`) and `flow`/`network` (`height`) read
+these layout fields only from `vertical` in the vertical version.
+
 ## Before you finish
 
 - Run `pipeline/build.py <job> --check` and fix every error. Treat warnings
   as things to fix unless there's a reason.
-- Then run `--stills` and look at `qa_sheet.jpg`. Check for overflow, overlaps,
-  text running into the caption band (below y≈800), empty-looking scenes, and
+- Then run `--stills` and look at `qa_sheet.jpg` and `qa_sheet-vertical.jpg`.
+  Check for overflow, overlaps, text running into the caption band (below
+  y≈800 in 16:9, the lower quarter in 9:16), empty-looking scenes, and
   unreadable charts.

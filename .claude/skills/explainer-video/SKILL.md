@@ -38,18 +38,23 @@ answer with a sensible default; they're often away. Make the video, then report.
    something else. Every number comes from the source.
 4. **Check:** `pipeline/build.py <job> --check`. Fix all errors and warnings.
 5. **Layout pass:** `pipeline/build.py <job> --stills` synthesizes the voice
-   (cached per scene) and renders one still per scene into `<job>/qa_sheet.jpg`.
-   Look at it and fix overflow, collisions, empty-looking or cramped scenes,
-   and text in the caption band. Repeat until clean (only changed scenes
+   (cached per scene) and renders one still per scene into `<job>/qa_sheet.jpg`
+   (16:9) and `<job>/qa_sheet-vertical.jpg` (9:16). Look at both and fix
+   overflow, collisions, empty-looking or cramped scenes, and text in the
+   caption band. A fix needed only in the vertical version goes in the visual's
+   `vertical` field (see the guide). Repeat until clean (only changed scenes
    re-voice).
-6. **Render:** `pipeline/build.py <job>`. It takes about 3 minutes per minute of
-   video, so run it with `run_in_background` and wait on its completion line. It writes `<job>/video.mp4`, copies it to
-   `output/<job>.mp4`, writes a formatted text summary to `output/<job>.md`
-   (`pipeline/summarize.py`; rerun it alone after editing the script), and
-   makes a QA sheet from the real video. Look at the
-   sheet. For sync, spot-check a few frames mid-scene with
+6. **Render:** `pipeline/build.py <job>`. It renders both formats, about 3
+   minutes per minute of video each, so run it with `run_in_background` and
+   wait on its completion line. It writes `<job>/video.mp4` and
+   `<job>/video-vertical.mp4`, copies them to `output/<job>.mp4` and
+   `output/<job>-vertical.mp4`, writes a formatted text summary to
+   `output/<job>.md` (`pipeline/summarize.py`; rerun it alone after editing the
+   script), and makes a QA sheet per format from the real videos. Look at the
+   sheets. For sync, spot-check a few frames mid-scene with
    `ffmpeg -ss <sec> -i <video> -frames:v 1 <png>`.
-7. **Deliver.** Send `output/<job>.mp4` and `output/<job>.md` with SendUserFile (status `proactive`
+7. **Deliver.** Send `output/<job>.mp4`, `output/<job>-vertical.mp4` and
+   `output/<job>.md` with SendUserFile (status `proactive`
    if the user is away). Reply in 2–4 lines: what it covers, its length, and
    anything partial or uncertain (paywalled, approximated chart shape, a
    claim you couldn't verify).
@@ -76,9 +81,10 @@ build. It can't use Chrome, so paywalled items are skipped and marked in the inb
 - Voice: Gemini TTS `Charon` (set `"voice"` in script.json; see the guide for
   others). The style note is in `"style"`. With no Gemini key or quota, it
   falls back to macOS `say`.
-- 1920×1080, 30 fps, dark theme, green accent (`"theme": {"accent": "#hex"}`).
+- 1920×1080 plus a 1080×1920 vertical version for phones, 30 fps, dark theme,
+  green accent (`"theme": {"accent": "#hex"}`). `--format landscape` or
+  `--format vertical` makes just one.
 - Length: 1.5–3 min. For "short", aim for ~60–90 s. For "deep dive", up to ~6 min.
-- Vertical/phone format isn't built yet. Say so if asked.
 
 ## Fixing problems
 

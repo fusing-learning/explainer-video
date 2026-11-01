@@ -1,7 +1,8 @@
 // Render a handful of stills from one bundle + one browser (much faster than
 // calling `remotion still` per frame). Used by pipeline/build.py --stills.
 //   node scripts/stills.mjs <timeline.json> <public-dir> <frames.json>
-// frames.json: [{"frame": 120, "out": "/abs/path.jpg"}, ...]
+// frames.json: [{"frame": 120, "out": "/abs/path.jpg", "id": "Explainer", "scale": 1}, ...]
+// id (composition) and scale are optional.
 import fs from "node:fs";
 import path from "node:path";
 import { bundle } from "@remotion/bundler";
@@ -16,10 +17,13 @@ const browserExecutable = fs.existsSync(SYSTEM_CHROME) && !process.env.REMOTION_
 const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts"), publicDir: path.resolve(publicDir) });
 const browser = await openBrowser("chrome", { browserExecutable, chromiumOptions: { gl: "swangle" } });
 try {
-  const composition = await selectComposition({ serveUrl, id: "Explainer", inputProps, puppeteerInstance: browser, browserExecutable });
+  const compositions = new Map();
   for (const f of frames) {
+    const id = f.id ?? "Explainer";
+    if (!compositions.has(id)) compositions.set(id, await selectComposition({ serveUrl, id, inputProps, puppeteerInstance: browser, browserExecutable }));
+    const composition = compositions.get(id);
     const frame = Math.min(composition.durationInFrames - 1, Math.max(0, f.frame));
-    await renderStill({ composition, serveUrl, output: f.out, frame, inputProps, imageFormat: "jpeg", jpegQuality: 85, puppeteerInstance: browser, browserExecutable, timeoutInMilliseconds: 120000 });
+    await renderStill({ composition, serveUrl, output: f.out, frame, inputProps, scale: f.scale ?? 1, imageFormat: "jpeg", jpegQuality: 85, puppeteerInstance: browser, browserExecutable, timeoutInMilliseconds: 120000 });
     console.log(f.out);
   }
 } finally {

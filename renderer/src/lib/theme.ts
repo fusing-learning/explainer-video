@@ -1,7 +1,8 @@
 import { loadFont as loadGeist } from "@remotion/google-fonts/Geist";
 import { loadFont as loadGeistMono } from "@remotion/google-fonts/GeistMono";
 import { createContext, useContext } from "react";
-import type { Color } from "./types";
+import { useVideoConfig } from "remotion";
+import type { Color, Visual } from "./types";
 
 const geist = loadGeist("normal", { weights: ["400", "500", "600"], subsets: ["latin", "latin-ext"] });
 const geistMono = loadGeistMono("normal", { weights: ["400", "500"], subsets: ["latin", "latin-ext"] });
@@ -9,13 +10,32 @@ const geistMono = loadGeistMono("normal", { weights: ["400", "500"], subsets: ["
 export const SANS = geist.fontFamily;
 export const MONO = geistMono.fontFamily;
 
-export const W = 1920;
-export const H = 1080;
-export const PAD = 120; // left/right margin
-export const TOP = 96; // scene title baseline area
-export const VIS_TOP = 236; // where visuals start when a scene has a title
-export const VIS_BOTTOM = 800; // visuals must stay above the caption band
-export const CAPTION_TOP = 858;
+/** Frame geometry. The vertical (9:16) version is laid out at 900x1600 and rendered at 1.2x to
+ * 1080x1920, so its text comes out 20% larger relative to the frame, which reads better on a phone. */
+export interface Layout {
+  portrait: boolean;
+  W: number;
+  H: number;
+  PAD: number; // left/right margin
+  TOP: number; // scene title baseline area
+  VIS_TOP: number; // where visuals start when a scene has a title
+  VIS_BOTTOM: number; // visuals must stay above the caption band
+  CAPTION_TOP: number;
+  CAPTION_W: number;
+}
+
+const LANDSCAPE: Layout = { portrait: false, W: 1920, H: 1080, PAD: 120, TOP: 96, VIS_TOP: 236, VIS_BOTTOM: 800, CAPTION_TOP: 858, CAPTION_W: 1320 };
+const PORTRAIT: Layout = { portrait: true, W: 900, H: 1600, PAD: 60, TOP: 150, VIS_TOP: 290, VIS_BOTTOM: 1150, CAPTION_TOP: 1210, CAPTION_W: 780 };
+
+export function useLayout(): Layout {
+  const { width, height } = useVideoConfig();
+  return height > width ? PORTRAIT : LANDSCAPE;
+}
+
+/** A visual's `vertical` fields replace its own in the vertical version. */
+export function oriented(v: Visual, portrait: boolean): Visual {
+  return portrait && v?.vertical ? { ...v, ...v.vertical } : v;
+}
 
 export interface Palette {
   bg: string;

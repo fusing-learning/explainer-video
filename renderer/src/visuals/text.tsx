@@ -1,7 +1,7 @@
 import React from "react";
 import { Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { EASE_IN_OUT, cueFrame, enter, prog, useScene } from "../lib/anim";
-import { MONO, SANS, alpha, resolveColor, usePalette } from "../lib/theme";
+import { MONO, SANS, alpha, resolveColor, useLayout, usePalette } from "../lib/theme";
 import { Box, Mono, Panel } from "../lib/ui";
 import type { Visual } from "../lib/types";
 
@@ -47,7 +47,10 @@ export function Headline({ v, box }: Props) {
     typeof l === "string" ? { text: l } : (l as { text: string }),
   );
   const longest = Math.max(...lines.map((l) => l.text.length));
-  const size = v.size ?? monoSize(longest, box.w, 112);
+  // Vertical: long lines wrap at ~14 characters rather than shrinking to fit the narrow frame.
+  const { portrait } = useLayout();
+  const longestWord = Math.max(...lines.flatMap((l) => l.text.split(/\s+/).map((w) => w.length)));
+  const size = v.size ?? monoSize(portrait ? Math.max(longestWord, Math.min(longest, 14)) : longest, box.w, 112);
   const subs = v.sub === undefined ? [] : Array.isArray(v.sub) ? v.sub : [{ text: v.sub, at: v.subAt ?? 0 }];
   return (
     <div style={{ paddingTop: v.top ?? 40 }}>
@@ -74,13 +77,13 @@ export function Headline({ v, box }: Props) {
   );
 }
 
-export function TextStatement({ v }: Props) {
+export function TextStatement({ v, box }: Props) {
   const p = usePalette();
   const frame = useCurrentFrame();
   const at = cueFrame(useScene(), v.at);
   const size = { md: 52, lg: 68, xl: 88 }[(v.size as string) ?? "lg"] ?? 68;
   return (
-    <div style={{ paddingTop: v.top ?? 60, maxWidth: 1500, ...enter(frame, at - 4, 18, 18) }}>
+    <div style={{ paddingTop: v.top ?? 60, maxWidth: Math.min(1500, box.w), ...enter(frame, at - 4, 18, 18) }}>
       {v.kicker && <div style={{ fontFamily: MONO, fontSize: 26, color: p.muted, marginBottom: 26 }}>{v.kicker}</div>}
       <div style={{ fontFamily: SANS, fontSize: size, fontWeight: 500, lineHeight: 1.2, color: resolveColor(p, v.color, "text"), letterSpacing: "-0.01em" }}>
         <Rich text={v.text} />
@@ -162,14 +165,15 @@ export function Points({ v, box }: Props) {
   const items: { title: string; text?: string; at?: number | string }[] = (v.items ?? []).map((it: unknown) =>
     typeof it === "string" ? { title: it } : it,
   );
-  const cols = v.columns ?? (items.length > 4 ? 2 : 1);
+  const { portrait } = useLayout();
+  const cols = portrait ? v.vertical?.columns ?? 1 : v.columns ?? (items.length > 4 ? 2 : 1);
   const starts = items.map((it, i) => cueFrame(scene, it.at ?? Math.min(i, Math.max(0, scene.lines.length - 1))));
   let active = -1;
   starts.forEach((s, i) => frame >= s && (active = i));
   const focus = v.focus !== false;
   const titleSize = items.length > 4 || cols > 1 ? 40 : 48;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, columnGap: 70, rowGap: cols > 1 ? 44 : 38, paddingTop: 16, width: box.w }}>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, columnGap: 70, rowGap: cols > 1 ? 44 : portrait && items.length > 4 ? 28 : 38, paddingTop: 16, width: box.w }}>
       {items.map((it, i) => {
         const dim = focus && active > i ? 0.45 : 1;
         return (
@@ -193,13 +197,15 @@ export function Compare({ v, box }: Props) {
   const sides = [v.left ?? {}, v.right ?? {}];
   const ats = [cueFrame(scene, v.leftAt ?? v.at ?? 0), cueFrame(scene, v.rightAt ?? Math.min(1, scene.lines.length - 1))];
   const colors = [resolveColor(p, sides[0].color ?? "muted"), resolveColor(p, sides[1].color ?? "accent")];
-  const w = (box.w - 120) / 2;
+  // Vertical: the panels stack, one above the other.
+  const { portrait } = useLayout();
+  const w = portrait ? box.w : (box.w - 120) / 2;
   return (
-    <div style={{ display: "flex", gap: 40, alignItems: "stretch", paddingTop: 10 }}>
+    <div style={{ display: "flex", flexDirection: portrait ? "column" : "row", gap: portrait ? 20 : 40, alignItems: "stretch", paddingTop: 10 }}>
       {sides.map((s, k) => (
         <React.Fragment key={k}>
           {k === 1 && (
-            <div style={{ display: "flex", alignItems: "center", fontFamily: MONO, fontSize: 30, color: p.muted, ...enter(frame, ats[1] - 8) }}>{v.vs ?? "→"}</div>
+            <div style={{ display: "flex", alignItems: "center", paddingLeft: portrait ? 36 : 0, fontFamily: MONO, fontSize: 30, color: p.muted, ...enter(frame, ats[1] - 8) }}>{v.vs ?? (portrait ? "↓" : "→")}</div>
           )}
           <Panel accent={colors[k]} style={{ width: w, ...enter(frame, ats[k] - 4) }}>
             <div style={{ fontFamily: MONO, fontSize: 46, color: colors[k], marginBottom: 8 }}>{s.title}</div>
@@ -222,9 +228,10 @@ export function Cards({ v, box }: Props) {
   const frame = useCurrentFrame();
   const items = v.items ?? [];
   const n = Math.max(1, items.length);
-  const w = Math.min(820, (box.w - (n - 1) * 34) / n);
+  const { portrait } = useLayout();
+  const w = portrait ? box.w : Math.min(820, (box.w - (n - 1) * 34) / n);
   return (
-    <div style={{ display: "flex", gap: 34, alignItems: "stretch" }}>
+    <div style={{ display: "flex", flexDirection: portrait ? "column" : "row", gap: portrait ? 24 : 34, alignItems: "stretch" }}>
       {items.map((c: Record<string, unknown>, i: number) => {
         const at = cueFrame(scene, (c.at as number | string | undefined) ?? Math.min(i, scene.lines.length - 1));
         const col = resolveColor(p, c.color as string | undefined);

@@ -43,8 +43,6 @@ export type Timeline = Record<string, unknown> & {
   height: number;
   durationInFrames: number;
   audio: string; // path relative to the job folder (the public dir)
-  envelope: number[]; // narration loudness 0..1, one value per envelopeStep frames
-  envelopeStep: number;
   theme?: { accent?: string; accent2?: string; accent3?: string };
   source: Source;
   scenes: Scene[];
