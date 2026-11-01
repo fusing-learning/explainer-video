@@ -31,8 +31,12 @@ tell Claude "do my inbox", or run it unattended:
 ```
 
 Unattended mode writes the script with the Claude API (`claude-opus-5-5`,
-`ANTHROPIC_API_KEY` in `.env`). It can't open Chrome, so paywalled items are
-marked "needs browser" in the inbox for a Claude Code session to finish.
+`ANTHROPIC_API_KEY` in `.env`). Paywalled or blocked pages are read in your
+Chrome by a headless `claude -p --chrome` run, which gets only the Claude in
+Chrome tools (no shell or file access). That needs Chrome open with the
+extension connected, and the `claude` CLI logged into the same claude.ai
+account as the extension. If the read fails, the item is marked "needs
+browser" in the inbox and the next run retries it.
 
 ## What it can read
 

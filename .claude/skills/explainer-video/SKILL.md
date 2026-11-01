@@ -69,7 +69,10 @@ process unchecked items and tick each with its output path.
 
 `./explain <url> [...]` or `./explain --inbox` runs fetch, then
 `pipeline/write_script.py` (Claude API, `ANTHROPIC_API_KEY` in `.env`), then
-build. It can't use Chrome, so paywalled items are skipped and marked in the inbox.
+build. When a fetch needs a browser, it runs headless `claude -p --chrome`
+(Chrome tools only) to read the page, then continues. If that fails (Chrome
+closed, extension disconnected, CLI logged into a different account than the
+extension), the item is marked "needs browser" and retried on the next run.
 
 ## Defaults (change on request)
 
