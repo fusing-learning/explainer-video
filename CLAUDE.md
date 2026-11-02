@@ -13,7 +13,7 @@ script, the QA loop, rendering, and delivery.
 - Python: `.venv/bin/python -W ignore pipeline/<script>.py`
 - Script-writing rules and visual types: `pipeline/prompts/script_guide.md`
 - Renderer (Remotion, React): `renderer/src/`. Typecheck with `cd renderer && npx tsc --noEmit`.
-- Keys live in `.env` (`GEMINI_API_KEY` for the voice, `ANTHROPIC_API_KEY`
-  for unattended `./explain`). Never print them.
+- Keys live in `.env` (`GEMINI_API_KEY` for the voice; `ANTHROPIC_API_KEY` is
+  optional, since `./explain` and the summary use `claude -p` by default). Never print them.
 - The user is often away while videos are made. Pick sensible defaults,
   finish the video, then report. Don't stop to ask.

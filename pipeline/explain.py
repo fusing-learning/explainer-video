@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End to end without a Claude Code session: fetch -> write script (Claude API) -> build.
+"""End to end without a Claude Code session: fetch -> write script (claude -p or API) -> build.
 
     explain <url-or-file> [...]       make a video for each
     explain --inbox                   process unchecked items in inbox.md
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, log, read_json, slugify, write_json  # noqa: E402
+from common import ROOT, cli_env, log, read_json, slugify, write_json  # noqa: E402
 
 PY = [sys.executable, "-W", "ignore"]
 HERE = Path(__file__).resolve().parent
@@ -81,7 +81,7 @@ def read_in_chrome(job: Path, url: str) -> Path | None:
            "--output-format", "json", "--json-schema", json.dumps(BROWSER_SCHEMA),
            BROWSER_PROMPT.format(url=url)]
     try:
-        p = subprocess.run(cmd, text=True, capture_output=True, timeout=900, cwd=job)
+        p = subprocess.run(cmd, text=True, capture_output=True, timeout=900, cwd=job, env=cli_env())
         res = json.loads(p.stdout)
     except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
         log(f"  Chrome read failed: {e}")

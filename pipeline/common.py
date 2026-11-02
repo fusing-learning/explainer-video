@@ -6,8 +6,10 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 from datetime import date
@@ -121,3 +123,55 @@ def rate_limit(name: str, per_minute: int) -> None:
                 return
             wait = 60 - (now - min(recent)) + 0.2
         time.sleep(wait)
+
+
+def claude_backend() -> str:
+    """How write_script/summarize call Claude: "cli" or "api".
+
+    "cli" runs `claude -p` on the Claude Code login (subscription), the default when
+    the claude CLI is installed. "api" uses ANTHROPIC_API_KEY. CLAUDE_BACKEND in .env
+    or the environment picks one explicitly.
+    """
+    choice = os.environ.get("CLAUDE_BACKEND", "").strip().lower()
+    if choice in ("cli", "api"):
+        return choice
+    if shutil.which("claude"):
+        return "cli"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "api"
+    raise RuntimeError("no way to call Claude: install and log in to the claude CLI, or set ANTHROPIC_API_KEY")
+
+
+def cli_env() -> dict[str, str]:
+    """Environment for `claude -p`, without ANTHROPIC_API_KEY so it uses its own login."""
+    return {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+
+
+def claude_print(system: str, content: list[dict], model: str, effort: str, timeout: int = 1800) -> tuple[str, dict]:
+    """One turn through `claude -p` with no tools. Returns (reply text, result event).
+
+    content is Messages API blocks (text and base64 images), sent as stream-json.
+    Runs outside the project so its CLAUDE.md isn't loaded.
+    """
+    msg = {"type": "user", "message": {"role": "user", "content": content}}
+    cmd = ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+           "--tools", "", "--no-session-persistence", "--model", model, "--effort", effort,
+           "--system-prompt", system]
+    try:
+        p = subprocess.run(cmd, input=json.dumps(msg) + "\n", text=True, capture_output=True,
+                           env=cli_env(), cwd=tempfile.gettempdir(), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"claude -p timed out after {timeout}s")
+    result = None
+    for line in p.stdout.splitlines():
+        with contextlib.suppress(json.JSONDecodeError):
+            ev = json.loads(line)
+            if ev.get("type") == "result":
+                result = ev
+    if result is None:
+        raise RuntimeError(f"claude -p failed (exit {p.returncode}): {(p.stderr or p.stdout).strip()[-300:]}")
+    if result.get("is_error") or result.get("subtype") != "success":
+        raise RuntimeError(f"claude -p failed: {str(result.get('result', ''))[:300]}")
+    if result.get("stop_reason") not in ("end_turn", "stop_sequence"):
+        raise RuntimeError(f"claude -p stopped early: {result.get('stop_reason')}")
+    return result.get("result", ""), result

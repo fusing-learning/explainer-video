@@ -15,7 +15,8 @@ narrator speaks, with one caption line at a time and a source card at the end.
 - **A Gemini API key** for the voice ([get one](https://aistudio.google.com/apikey)).
 - Optional:
   - [Claude Code](https://claude.com/claude-code), for the main way of using it (below).
-  - An Anthropic API key, for unattended `./explain`.
+    Unattended `./explain` and the text summaries also run on its login through `claude -p`.
+  - An Anthropic API key, only if you'd rather not use Claude Code for those (or don't have it).
   - The [Claude in Chrome](https://claude.com/chrome) extension, for paywalled pages and X threads.
 - About 2 GB of free disk for the whisper model, which downloads on the first run.
 
@@ -29,7 +30,7 @@ cp .env.example .env    # then paste your keys into .env
 ```
 
 To check that it works, make your first video: open Claude Code in this
-folder and paste a link, or, with `ANTHROPIC_API_KEY` set, run the line below.
+folder and paste a link, or run the line below.
 The first run is slower while the whisper model downloads.
 
 ```bash
@@ -62,8 +63,10 @@ tell Claude "do my inbox", or run it unattended:
 ./explain https://example.com/some-article
 ```
 
-Unattended mode writes the script with the Claude API (`claude-opus-5-5`,
-`ANTHROPIC_API_KEY` in `.env`). Paywalled or blocked pages are read in your
+Unattended mode writes the script with `claude-opus-5-5` through a headless
+`claude -p` run (no tools) on your Claude Code login. Without the `claude`
+CLI, or if that run fails, it uses `ANTHROPIC_API_KEY` from `.env` instead;
+set `CLAUDE_BACKEND=api` to always use the key. Paywalled or blocked pages are read in your
 Chrome by a headless `claude -p --chrome` run, which gets only the Claude in
 Chrome tools (no shell or file access). That needs Chrome open with the
 extension connected, and the `claude` CLI logged into the same claude.ai
@@ -114,7 +117,7 @@ build.py        voice (Gemini TTS, cached per scene) -> whisper word alignment -
 
 ## Cost per video (rough)
 
-Gemini TTS for about 15 short clips costs a few cents. Unattended script
-writing with Claude Opus 5.5 runs about 30–60k input tokens (the article plus
-images) and 5–10k output, roughly $0.30–0.50. In a Claude Code session, the
-script comes out of your normal usage instead.
+Gemini TTS for about 15 short clips costs a few cents. Script writing with
+Claude Opus 5.5 runs about 30–60k input tokens (the article plus images) and
+5–10k output. Through Claude Code (a session or `claude -p`) that comes out of
+your plan's usage; on an API key it's roughly $0.30–0.50.

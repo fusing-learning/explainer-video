@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-"""Write output/<job>.md, a formatted text version of a job's video (Claude API).
+"""Write output/<job>.md, a formatted text version of a job's video (Claude).
 
     summarize.py <job>
 
 build.py runs this after publishing a video. The summary covers what the
 narration covers, with headers and bullets where they help, under a header
-with the source link and reading times. Without an API key (or if the call
-fails) it falls back to the narration as plain paragraphs.
+with the source link and reading times. Claude runs through `claude -p` on the
+Claude Code login by default, or the API with ANTHROPIC_API_KEY (see
+common.claude_backend). If neither works it falls back to the narration as
+plain paragraphs.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import OUTPUT, ROOT, load_env, log, read_json  # noqa: E402
+from common import OUTPUT, ROOT, claude_backend, claude_print, load_env, log, read_json  # noqa: E402
 
 MODEL = "claude-opus-5-5"
 READ_WPM = 238  # average adult silent reading speed, non-fiction
@@ -59,16 +62,10 @@ def header(meta: dict, body: str) -> str:
     return out + "\n\n"
 
 
-def write_body(meta: dict, paras: list[str], source: str) -> str:
+def ask_api(user: str) -> str:
     import anthropic
 
     client = anthropic.Anthropic()
-    user = "\n\n".join([
-        f"## Source: {meta.get('title', '')} ({meta.get('site', '')})",
-        "## Video narration, one paragraph per scene", "\n\n".join(paras),
-        "## Source text (for checking names and numbers only)", source[:150_000],
-        "## Task", "Write the summary.",
-    ])
     with client.beta.messages.stream(
         model=MODEL,
         max_tokens=16000,
@@ -82,8 +79,27 @@ def write_body(meta: dict, paras: list[str], source: str) -> str:
         msg = stream.get_final_message()
     if msg.stop_reason not in ("end_turn", "stop_sequence"):
         raise RuntimeError(f"stopped early: {msg.stop_reason}")
-    text = "".join(b.text for b in msg.content if b.type == "text").strip()
-    text = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", text).strip()
+    return "".join(b.text for b in msg.content if b.type == "text")
+
+
+def write_body(meta: dict, paras: list[str], source: str) -> str:
+    user = "\n\n".join([
+        f"## Source: {meta.get('title', '')} ({meta.get('site', '')})",
+        "## Video narration, one paragraph per scene", "\n\n".join(paras),
+        "## Source text (for checking names and numbers only)", source[:150_000],
+        "## Task", "Write the summary.",
+    ])
+    if claude_backend() == "cli":
+        try:
+            text, _ = claude_print(SYSTEM, [{"type": "text", "text": user}], MODEL, "medium")
+        except RuntimeError as e:
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise
+            log(f"summary: {e}; using ANTHROPIC_API_KEY instead")
+            text = ask_api(user)
+    else:
+        text = ask_api(user)
+    text = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", text.strip()).strip()
     text = re.sub(r"^# .*\n+", "", text)  # the title comes from the header
     if len(text.split()) < 50:
         raise RuntimeError("reply too short")

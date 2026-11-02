@@ -73,7 +73,8 @@ process unchecked items and tick each with its output path.
 ## Unattended / no session
 
 `./explain <url> [...]` or `./explain --inbox` runs fetch, then
-`pipeline/write_script.py` (Claude API, `ANTHROPIC_API_KEY` in `.env`), then
+`pipeline/write_script.py` (`claude -p` on the Claude Code login; `ANTHROPIC_API_KEY`
+as fallback, or always with `CLAUDE_BACKEND=api`), then
 build. When a fetch needs a browser, it runs headless `claude -p --chrome`
 (Chrome tools only) to read the page, then continues. If that fails (Chrome
 closed, extension disconnected, CLI logged into a different account than the
