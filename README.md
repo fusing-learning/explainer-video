@@ -5,6 +5,37 @@ Send a link, get a ~2-minute narrated explainer video, in the style of
 data-first motion graphics where numbers count up and charts build as the
 narrator speaks, with one caption line at a time and a source card at the end.
 
+## Requirements
+
+- **A Mac with Apple Silicon (M1 or later).** Captions are timed with
+  mlx-whisper, which only runs on Apple Silicon. A few steps also use the
+  macOS tools `textutil` and `say`.
+- **Google Chrome** in `/Applications`. Remotion renders with it.
+- **Python 3.11+**, **Node 20+**, and **ffmpeg** (`brew install python node ffmpeg`).
+- **A Gemini API key** for the voice ([get one](https://aistudio.google.com/apikey)).
+- Optional:
+  - [Claude Code](https://claude.com/claude-code), for the main way of using it (below).
+  - An Anthropic API key, for unattended `./explain`.
+  - The [Claude in Chrome](https://claude.com/chrome) extension, for paywalled pages and X threads.
+- About 2 GB of free disk for the whisper model, which downloads on the first run.
+
+## Setup
+
+```bash
+git clone <this repo> explainer-video && cd explainer-video
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cd renderer && npm install && cd ..
+cp .env.example .env    # then paste your keys into .env
+```
+
+To check that it works, make your first video: open Claude Code in this
+folder and paste a link, or, with `ANTHROPIC_API_KEY` set, run the line below.
+The first run is slower while the whisper model downloads.
+
+```bash
+./explain https://paulgraham.com/greatwork.html
+```
+
 ## How to use it
 
 **From Claude Code (best).** Open a session in this folder and paste links,
@@ -66,8 +97,9 @@ build.py        voice (Gemini TTS, cached per scene) -> whisper word alignment -
   visuals stack, and the title and visual sit together above the captions. It is
   laid out at 900×1600 and rendered at 1.2× to 1080×1920, so text is a little
   larger relative to the frame.
-- Voice: Gemini `gemini-3.8-flash-tts`, voice `Charon`. Your tier allows 10
-  requests/min, which a shared limiter handles. Falls back to macOS `say`.
+- Voice: Gemini `gemini-3.8-flash-tts`, voice `Charon`. A shared limiter keeps
+  it to 9 requests/min (set `GEMINI_TTS_RPM` in `.env` for a different tier).
+  Falls back to macOS `say`.
 - Rendering takes about 3 minutes per minute of video, per format. It runs in ~60 s chunks,
   each in a fresh Chrome, because a single long pass stalls when the Mac is
   unattended (macOS throttles the invisible Chrome after ~5 min). The chunks
@@ -86,12 +118,3 @@ Gemini TTS for about 15 short clips costs a few cents. Unattended script
 writing with Claude Opus 5.5 runs about 30–60k input tokens (the article plus
 images) and 5–10k output, roughly $0.30–0.50. In a Claude Code session, the
 script comes out of your normal usage instead.
-
-## Setup (already done on this Mac)
-
-```bash
-python3 -m venv --system-site-packages .venv && .venv/bin/pip install trafilatura pymupdf anthropic
-cd renderer && npm install
-```
-
-It also needs ffmpeg, yt-dlp and mlx-whisper (already installed), plus Google Chrome.

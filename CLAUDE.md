@@ -8,6 +8,8 @@ When the user sends a link or file, or says "do my inbox", use the
 fetching (including paywalled pages through the user's Chrome), writing the
 script, the QA loop, rendering, and delivery.
 
+- First run on a new machine: if `.venv`, `renderer/node_modules` or `.env`
+  is missing, follow Setup in `README.md` before anything else.
 - Python: `.venv/bin/python -W ignore pipeline/<script>.py`
 - Script-writing rules and visual types: `pipeline/prompts/script_guide.md`
 - Renderer (Remotion, React): `renderer/src/`. Typecheck with `cd renderer && npx tsc --noEmit`.

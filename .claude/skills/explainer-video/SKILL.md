@@ -94,7 +94,7 @@ extension), the item is marked "needs browser" and retried on the next run.
 - Remotion hangs with "Waiting for root component": the bundled headless
   Chrome is broken on this macOS. `renderer/remotion.config.ts` points at
   system Chrome. Keep it that way.
-- TTS 429s: the tier allows 10 requests/min. The limiter handles it, so just wait.
+- TTS 429s: the limiter keeps to `GEMINI_TTS_RPM` (default 9/min), so just wait.
 - A render failing with `delayRender ... "Setting the current frame"` means
   Chrome got throttled. Chunked rendering plus retries usually absorbs it, so
   re-run the build. Keep `CHUNK` in `build.py` at ≤60 s of video.

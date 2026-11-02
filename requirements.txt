@@ -1,0 +1,9 @@
+# Python dependencies for pipeline/. Install into .venv (see README, Setup).
+anthropic>=2.3
+mlx-whisper>=0.4.3   # Apple Silicon only; word timings for captions
+numpy>=2.2
+pillow>=11.2
+pymupdf>=2.0
+requests>=2.32
+trafilatura>=2.0
+yt-dlp>=2026.10.26   # update often; YouTube breaks old versions
